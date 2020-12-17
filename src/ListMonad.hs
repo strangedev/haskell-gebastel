@@ -32,10 +32,10 @@ data Point = Point Int Int
 neighbors :: Point -> LinkedList Point
 neighbors (Point x y) = (Cons left (Cons right (Cons top (Cons bottom Nil))))
   where
-    left = Point (x - 1) y
-    right = Point (x + 1) y
-    top = Point x (y + 1)
-    bottom = Point x (y - 1)
+    left    = Point (x - 1) y
+    right   = Point (x + 1) y
+    top     = Point x (y + 1)
+    bottom  = Point x (y - 1)
 
 -- 3rd generation neighbors
 main = print $ neighbors (Point 0 0) >>= neighbors >>= neighbors
