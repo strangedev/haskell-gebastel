@@ -76,7 +76,8 @@ isNumberString = foldl (&&) True . map isDigit
 
 matchNumber :: LookaheadMatcher
 matchNumber input Nothing
-  | isNumberString input = Match
+  | isNumberString input  = Match
+  | otherwise             = NoMatch
 matchNumber input (Just c)
   | (isNumberString input) && (isDigit c)     = Continue
   | (isNumberString input) && not (isDigit c) = Match
