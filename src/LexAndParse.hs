@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 import Data.Maybe
 import Data.List
 import Data.Char
@@ -173,8 +175,12 @@ reduceValue ((Atom (Literal a)):xs) = case readMaybe a :: Maybe Int of
   Nothing -> Nothing
 reduceValue _ = Nothing
 
+instance Show Reducer where
+  show a = "SomeReducer"
+
 -- reducers, input, output
 data Parser = Parser [Reducer] [Symbol] [Symbol]
+  deriving Show
 
 tryReductions :: Parser -> [Parser]
 tryReductions (Parser reducers input output) = map (Parser reducers input) $ map fromJust . filter isJust $ reductions
@@ -182,39 +188,41 @@ tryReductions (Parser reducers input output) = map (Parser reducers input) $ map
         reductions = map (\r -> r output) $ reducers
 
 shift :: Parser -> Maybe Parser
-shift (Parser _ _ []) = Nothing
+shift (Parser _ [] _) = Nothing
 shift (Parser reducers (x:xs) output) = Just $ Parser reducers xs (x:output)
 
 -- a Parser is terminated when the entire input was read and only one
 -- symbol remains in the output, i.e. it is fully reduced
 isTerminated :: Parser -> Bool
-isTerminated (Parser _ (symbol:[]) []) = True
+isTerminated (Parser _ [] (symbol:[])) = True
 isTerminated _ = False
 
-shiftReduce :: [Parser] -> Symbol
-shiftReduce parsers = case isAccepted of
-  Just (Parser _ (x:xs) _) -> x
-  Nothing -> shiftReduce steppedParsers
-  where step :: Parser -> Maybe [Parser]
-        step parser = case tryReductions parser of
-          -- no reductions possible
-          [] -> case shift parser of
-            Nothing -> Nothing
-            Just shiftedParser -> Just [shiftedParser]
-          -- some reductions possible 
-          reducedParsers -> Just reducedParsers
-        -- map step $ parsers :: [Maybe [Parser]]
-        -- map fromJust . filter isJust . map step $ parsers :: [[Parser]]
-        steppedParsers = concat . map fromJust . filter isJust . map step $ parsers
-        isAccepted = find isTerminated steppedParsers
+wrap :: a -> [a]
+wrap a = [a]
 
-fromReducers :: [Reducer] -> [Symbol] -> Parser
-fromReducers reducers = \input -> Parser reducers input []
+shiftReduceStep :: Parser -> Maybe [Parser]
+shiftReduceStep parser = case tryReductions parser of
+  -- no reductions possible
+  [] -> fmap wrap $ shift parser
+  -- some reductions possible 
+  reducedParsers -> Just reducedParsers
+
+shiftReduce :: [Parser] -> Maybe Symbol
+shiftReduce parsers = case find isTerminated parsers of
+  Just (Parser _ _ (x:xs))  -> Just x
+  Nothing                   -> case filter isJust $ map shiftReduceStep parsers of
+    []  -> Nothing
+    xs  -> shiftReduce . concat . map fromJust $ xs
+
+fromReducers :: [Reducer] -> [Symbol] -> [Parser]
+fromReducers reducers input = [Parser reducers input []]
 
 fromTokens :: [Token] -> [Symbol]
 fromTokens = map Atom
 
 fromTokenStream :: TokenStream -> [Symbol]
-fromTokenStream (Tokens t) = fromTokens t
+fromTokenStream (Tokens t) = reverse . fromTokens $ t
 
-parseMaths = fromReducers [reduceParens, reduceValue, reduceAdd, reduceSub]
+parseMaths = shiftReduce . fromReducers [reduceParens, reduceValue, reduceAdd, reduceSub]
+
+main = print $ parseMaths . fromTokenStream . lexMaths $ "((3 Add 10) Sub 123) Add (2 Add 43) Sub (3)"
