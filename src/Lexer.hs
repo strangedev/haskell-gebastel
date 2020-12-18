@@ -1,9 +1,7 @@
 import Data.Maybe
 import Data.List
 import Data.Char
-
-data AST = Leaf Int | Add AST AST | Sub AST AST
-  deriving Show
+import Text.Read
 
 data Token = Literal String | LParen String | RParen String | OpAdd String | OpSub String
   deriving Show
@@ -144,4 +142,79 @@ readers = [readLParen, readRParen, readOpSub, readOpAdd, readLiteral]
 lexMaths :: String -> TokenStream
 lexMaths = tokenize readers
 
-main = print (lexMaths "(Sub (Add 354 332) 221)")
+
+
+data AST =
+  Value Int   |
+  Add AST AST |
+  Sub AST AST
+  deriving Show
+
+data Symbol = Atom Token | Reduced AST
+  deriving Show
+
+type Reducer = [Symbol] -> Maybe [Symbol]
+
+reduceParens :: Reducer
+reduceParens ((Atom (LParen _)):(Reduced a):(Atom (RParen _)):xs) = Just $ (Reduced a):xs 
+reduceParens _ = Nothing
+
+reduceAdd :: Reducer
+reduceAdd ((Reduced a):(Atom (OpAdd _)):(Reduced b):xs) = Just $ (Reduced (Add a b)):xs
+reduceAdd _ = Nothing
+
+reduceSub :: Reducer
+reduceSub ((Reduced a):(Atom (OpSub _)):(Reduced b):xs) = Just $ (Reduced (Sub a b)):xs
+reduceSub _ = Nothing
+
+reduceValue :: Reducer
+reduceValue ((Atom (Literal a)):xs) = case readMaybe a :: Maybe Int of
+  Just x  -> Just $ (Reduced (Value x)):xs
+  Nothing -> Nothing
+reduceValue _ = Nothing
+
+-- reducers, input, output
+data Parser = Parser [Reducer] [Symbol] [Symbol]
+
+tryReductions :: Parser -> [Parser]
+tryReductions (Parser reducers input output) = map (Parser reducers input) $ map fromJust . filter isJust $ reductions
+  where reductions :: [Maybe [Symbol]] 
+        reductions = map (\r -> r output) $ reducers
+
+shift :: Parser -> Maybe Parser
+shift (Parser _ _ []) = Nothing
+shift (Parser reducers (x:xs) output) = Just $ Parser reducers xs (x:output)
+
+-- a Parser is terminated when the entire input was read and only one
+-- symbol remains in the output, i.e. it is fully reduced
+isTerminated :: Parser -> Bool
+isTerminated (Parser _ (symbol:[]) []) = True
+isTerminated _ = False
+
+shiftReduce :: [Parser] -> Symbol
+shiftReduce parsers = case isAccepted of
+  Just (Parser _ (x:xs) _) -> x
+  Nothing -> shiftReduce steppedParsers
+  where step :: Parser -> Maybe [Parser]
+        step parser = case tryReductions parser of
+          -- no reductions possible
+          [] -> case shift parser of
+            Nothing -> Nothing
+            Just shiftedParser -> Just [shiftedParser]
+          -- some reductions possible 
+          reducedParsers -> Just reducedParsers
+        -- map step $ parsers :: [Maybe [Parser]]
+        -- map fromJust . filter isJust . map step $ parsers :: [[Parser]]
+        steppedParsers = concat . map fromJust . filter isJust . map step $ parsers
+        isAccepted = find isTerminated steppedParsers
+
+fromReducers :: [Reducer] -> [Symbol] -> Parser
+fromReducers reducers = \input -> Parser reducers input []
+
+fromTokens :: [Token] -> [Symbol]
+fromTokens = map Atom
+
+fromTokenStream :: TokenStream -> [Symbol]
+fromTokenStream (Tokens t) = fromTokens t
+
+parseMaths = fromReducers [reduceParens, reduceValue, reduceAdd, reduceSub]
