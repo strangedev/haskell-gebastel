@@ -5,7 +5,7 @@ import Data.List
 import Data.Char
 import Text.Read
 
-data Token = LiteralValue String | LeftParenthese String | RightParenthese String | OperatorAdd String | OperatorSub String
+data Token = LiteralValue String | LeftParenthese String | RightParenthese String | OperatorAdd String | OperatorSub String | OperatorMult String
   deriving Show
 
 -- A TokenLexer lexes a certain Token from the left of a String.
@@ -137,8 +137,9 @@ readLeftParenthese = readToken LeftParenthese (literalMatch "(")
 readRightParenthese = readToken RightParenthese (literalMatch ")")
 readOperatorAdd = readToken OperatorAdd (literalMatch "+")
 readOperatorSub = readToken OperatorSub (literalMatch "-")
+readOperatorMult = readToken OperatorMult (literalMatch "*")
 readLiteralValue = readToken LiteralValue matchNumber
-readers = [readLeftParenthese, readRightParenthese, readOperatorSub, readOperatorAdd, readLiteralValue]
+readers = [readLeftParenthese, readRightParenthese, readOperatorSub, readOperatorAdd, readLiteralValue, readOperatorMult]
 
 -- And finally, this is our Lexer
 lexMaths :: String -> TokenStream
@@ -149,7 +150,8 @@ lexMaths = tokenize readers
 data AST =
   Value Int   |
   Add AST AST |
-  Sub AST AST
+  Sub AST AST |
+  Mult AST AST
   deriving Show
 
 data Symbol = Atom Token | Reduced AST
@@ -183,6 +185,15 @@ reduceSub (
     xs
   ) = Just $ (Reduced (Sub a b)):xs
 reduceSub _ = Nothing
+
+reduceMult :: Reducer
+reduceMult (
+    (Reduced a):
+    (Atom (OperatorMult _)):
+    (Reduced b):
+    xs
+  ) = Just $ (Reduced (Mult a b)):xs
+reduceMult _ = Nothing
 
 reduceValue :: Reducer
 reduceValue (
@@ -239,11 +250,15 @@ fromTokens = map Atom
 fromTokenStream :: TokenStream -> [Symbol]
 fromTokenStream (Tokens t) = reverse . fromTokens $ t
 
-parseMaths = shiftReduce . fromReducers [reduceParens, reduceValue, reduceAdd, reduceSub]
+parseMaths = shiftReduce . fromReducers [reduceParens, reduceValue, reduceAdd, reduceSub, reduceMult]
+
+fromSymbol :: Symbol -> AST
+fromSymbol (Reduced a) = a
 
 execute :: AST -> Int
 execute (Value a) = a
 execute (Add a b) = (execute a) + (execute b)
 execute (Sub a b) = (execute a) - (execute b)
+execute (Mult a b) = (execute a) * (execute b)
 
-main = print $ execute . parseMaths . fromTokenStream . lexMaths $ "((3 + 10 ) - 123) + (2 + 43) - (3)"
+calcStuffs = execute . fromSymbol . fromJust . parseMaths . fromTokenStream . lexMaths
