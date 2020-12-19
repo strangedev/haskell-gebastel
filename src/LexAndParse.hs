@@ -5,7 +5,7 @@ import Data.List
 import Data.Char
 import Text.Read
 
-data Token = Literal String | LParen String | RParen String | OpAdd String | OpSub String
+data Token = LiteralValue String | LeftParenthese String | RightParenthese String | OperatorAdd String | OperatorSub String
   deriving Show
 
 -- A TokenLexer lexes a certain Token from the left of a String.
@@ -133,18 +133,18 @@ matchNumber input (Just c)
   | otherwise                                 = NoMatch
 
 -- We may now create some TokenLexers from the LookaheadMatchers
-readLParen = readToken LParen (literalMatch "(")
-readRParen = readToken RParen (literalMatch ")")
-readOpAdd = readToken OpAdd (literalMatch "Add")
-readOpSub = readToken OpSub (literalMatch "Sub")
-readLiteral = readToken Literal matchNumber
-readers = [readLParen, readRParen, readOpSub, readOpAdd, readLiteral]
+readLeftParenthese = readToken LeftParenthese (literalMatch "(")
+readRightParenthese = readToken RightParenthese (literalMatch ")")
+readOperatorAdd = readToken OperatorAdd (literalMatch "+")
+readOperatorSub = readToken OperatorSub (literalMatch "-")
+readLiteralValue = readToken LiteralValue matchNumber
+readers = [readLeftParenthese, readRightParenthese, readOperatorSub, readOperatorAdd, readLiteralValue]
 
 -- And finally, this is our Lexer
 lexMaths :: String -> TokenStream
 lexMaths = tokenize readers
 
-
+-- HELO DIS IS PARSER
 
 data AST =
   Value Int   |
@@ -158,19 +158,37 @@ data Symbol = Atom Token | Reduced AST
 type Reducer = [Symbol] -> Maybe [Symbol]
 
 reduceParens :: Reducer
-reduceParens ((Atom (LParen _)):(Reduced a):(Atom (RParen _)):xs) = Just $ (Reduced a):xs 
+reduceParens (
+    (Atom (LeftParenthese _)):
+    (Reduced a):
+    (Atom (RightParenthese _)):
+    xs
+  ) = Just $ (Reduced a):xs 
 reduceParens _ = Nothing
 
 reduceAdd :: Reducer
-reduceAdd ((Reduced a):(Atom (OpAdd _)):(Reduced b):xs) = Just $ (Reduced (Add a b)):xs
+reduceAdd (
+    (Reduced a):
+    (Atom (OperatorAdd _)):
+    (Reduced b):
+    xs
+  ) = Just $ (Reduced (Add a b)):xs
 reduceAdd _ = Nothing
 
 reduceSub :: Reducer
-reduceSub ((Reduced a):(Atom (OpSub _)):(Reduced b):xs) = Just $ (Reduced (Sub a b)):xs
+reduceSub (
+    (Reduced a):
+    (Atom (OperatorSub _)):
+    (Reduced b):
+    xs
+  ) = Just $ (Reduced (Sub a b)):xs
 reduceSub _ = Nothing
 
 reduceValue :: Reducer
-reduceValue ((Atom (Literal a)):xs) = case readMaybe a :: Maybe Int of
+reduceValue (
+    (Atom (LiteralValue a)):
+    xs
+  ) = case readMaybe a :: Maybe Int of
   Just x  -> Just $ (Reduced (Value x)):xs
   Nothing -> Nothing
 reduceValue _ = Nothing
@@ -179,43 +197,41 @@ instance Show Reducer where
   show a = "SomeReducer"
 
 -- reducers, input, output
-data Parser = Parser [Reducer] [Symbol] [Symbol]
+data ParserState = ParserState [Reducer] [Symbol] [Symbol]
   deriving Show
 
-tryReductions :: Parser -> [Parser]
-tryReductions (Parser reducers input output) = map (Parser reducers input) $ map fromJust . filter isJust $ reductions
-  where reductions :: [Maybe [Symbol]] 
-        reductions = map (\r -> r output) $ reducers
+tryReductions :: ParserState -> [ParserState]
+tryReductions (ParserState reducers input output) = reducedParserStates
+  where reductions = map ($ output) reducers
+        validReductions = map fromJust . filter isJust $ reductions
+        reducedParserStates = map (ParserState reducers input) validReductions
 
-shift :: Parser -> Maybe Parser
-shift (Parser _ [] _) = Nothing
-shift (Parser reducers (x:xs) output) = Just $ Parser reducers xs (x:output)
+shift :: ParserState -> Maybe ParserState
+shift (ParserState _ [] _) = Nothing
+shift (ParserState reducers (x:xs) output) = Just $ ParserState reducers xs (x:output)
 
--- a Parser is terminated when the entire input was read and only one
+-- a ParserState is terminated when the entire input was read and only one
 -- symbol remains in the output, i.e. it is fully reduced
-isTerminated :: Parser -> Bool
-isTerminated (Parser _ [] (symbol:[])) = True
+isTerminated :: ParserState -> Bool
+isTerminated (ParserState _ [] (symbol:[])) = True
 isTerminated _ = False
 
-wrap :: a -> [a]
-wrap a = [a]
-
-shiftReduceStep :: Parser -> Maybe [Parser]
+shiftReduceStep :: ParserState -> [ParserState]
 shiftReduceStep parser = case tryReductions parser of
   -- no reductions possible
-  [] -> fmap wrap $ shift parser
+  [] -> maybeToList $ shift parser
   -- some reductions possible 
-  reducedParsers -> Just reducedParsers
+  reducedParserStates -> reducedParserStates
 
-shiftReduce :: [Parser] -> Maybe Symbol
+shiftReduce :: [ParserState] -> Maybe Symbol
 shiftReduce parsers = case find isTerminated parsers of
-  Just (Parser _ _ (x:xs))  -> Just x
-  Nothing                   -> case filter isJust $ map shiftReduceStep parsers of
+  Just (ParserState _ _ (x:xs))  -> Just x
+  Nothing                   -> case map shiftReduceStep parsers of
     []  -> Nothing
-    xs  -> shiftReduce . concat . map fromJust $ xs
+    xs  -> shiftReduce $ concat xs
 
-fromReducers :: [Reducer] -> [Symbol] -> [Parser]
-fromReducers reducers input = [Parser reducers input []]
+fromReducers :: [Reducer] -> [Symbol] -> [ParserState]
+fromReducers reducers input = [ParserState reducers input []]
 
 fromTokens :: [Token] -> [Symbol]
 fromTokens = map Atom
@@ -225,4 +241,9 @@ fromTokenStream (Tokens t) = reverse . fromTokens $ t
 
 parseMaths = shiftReduce . fromReducers [reduceParens, reduceValue, reduceAdd, reduceSub]
 
-main = print $ parseMaths . fromTokenStream . lexMaths $ "((3 Add 10) Sub 123) Add (2 Add 43) Sub (3)"
+execute :: AST -> Int
+execute (Value a) = a
+execute (Add a b) = (execute a) + (execute b)
+execute (Sub a b) = (execute a) - (execute b)
+
+main = print $ execute . parseMaths . fromTokenStream . lexMaths $ "((3 + 10 ) - 123) + (2 + 43) - (3)"
