@@ -101,3 +101,35 @@ rightRotate :: (Ord a, Eq a) => BinaryTree a -> BinaryTree a
 rightRotate (Node value Nothing right) = Node value Nothing right
 rightRotate (Node rootValue (Just leftTree) rightTree) = Node (value leftTree) (left leftTree) (Just rightOfRoot)
   where rightOfRoot = Node rootValue (right leftTree) rightTree
+
+data Balancedness = Balanced | RightHeavy | LeftHeavy
+  deriving Show
+
+classifyBalancedness :: (Ord a, Eq a) => BinaryTree a -> Balancedness
+classifyBalancedness tree
+  | treeBalance < -1 = LeftHeavy
+  | treeBalance > 1 = RightHeavy
+  | otherwise = Balanced
+  where treeBalance = balance tree
+
+avlRebalance :: (Ord a, Eq a) => BinaryTree a -> BinaryTree a
+avlRebalance tree = case classifyBalancedness tree of
+  Balanced -> tree
+  RightHeavy -> let rightTree = justRight tree in
+    case classifyBalancedness rightTree of
+      Balanced -> leftRotate tree
+      RightHeavy -> leftRotate tree
+      LeftHeavy -> leftRotate (Node (value tree) (left tree) (Just $ rightRotate  rightTree))
+  LeftHeavy -> let leftTree = justLeft tree in
+    case classifyBalancedness leftTree of
+      Balanced -> rightRotate tree
+      LeftHeavy -> rightRotate tree
+      RightHeavy -> rightRotate (Node (value tree) (Just $ leftRotate leftTree) (right tree))
+
+-- below functions are incomplete, as we have to repair all nodes
+-- in the insertion or deletion path
+avlInsert :: (Ord a, Eq a) => Maybe (BinaryTree a) -> a -> BinaryTree a
+avlInsert tree a = avlRebalance $ unbalancedInsert tree a
+
+avlDelete :: (Ord a, Eq a) => BinaryTree a -> a -> Maybe (BinaryTree a)
+avlDelete tree a = fmap avlRebalance $ unbalancedDelete (Just tree) a
