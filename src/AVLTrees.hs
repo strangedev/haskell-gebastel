@@ -1,26 +1,47 @@
 import Data.Maybe
 
 data BinaryTree a = Node {
- value :: a, 
- left :: (Maybe (BinaryTree a)),
- right :: (Maybe (BinaryTree a))
+  value :: a,
+  height :: Int, 
+  left :: (Maybe (BinaryTree a)),
+  right :: (Maybe (BinaryTree a))
 } 
 
 hasLeft :: (Ord a, Eq a) => BinaryTree a -> Bool
-hasLeft (Node _ left _) = isJust left
+hasLeft Node{left=l} = isJust l
 
 hasRight :: (Ord a, Eq a) => BinaryTree a -> Bool
-hasRight (Node _ _ right) = isJust right
+hasRight Node{right=r} = isJust r
 
 justLeft :: (Ord a, Eq a) => BinaryTree a -> BinaryTree a
-justLeft (Node _ left _) = fromJust left
+justLeft Node{left=l} = fromJust l
 
 justRight :: (Ord a, Eq a) => BinaryTree a -> BinaryTree a
-justRight (Node _ _ right) = fromJust right
+justRight Node{right=r} = fromJust r
 
 isLeaf :: (Ord a, Eq a) => BinaryTree a -> Bool
 isLeaf tree = not (hasLeft tree || hasRight tree)
 
+wrapIn :: String -> String -> String -> String
+wrapIn leftDelimiter rightDelimiter x = leftDelimiter ++ x ++ rightDelimiter
+
+wrapInParens = wrapIn "( " " )"
+wrapInBrackts = wrapIn "[ " " ]"
+wrapInAngleBrackets = wrapIn "< " " >"
+
+instance (Show a) => Show (BinaryTree a) where
+  show tree =
+    let
+      showValue isRoot a h = case isRoot of
+        True -> wrapInAngleBrackets $ show a ++ ":" ++ show h
+        False -> show a ++ ":" ++ show h
+      showTree isRoot (Node a h Nothing Nothing) = wrapInBrackts $ showValue isRoot a h 
+      showTree isRoot (Node a h (Just left) Nothing) = wrapInParens $ (showTree False left) ++ " <- " ++ (showValue isRoot a h)
+      showTree isRoot (Node a h Nothing (Just right)) = wrapInParens $ (showValue isRoot a h) ++ " -> " ++ (showTree False right)
+      showTree isRoot (Node a h (Just left) (Just right)) = wrapInParens $ (showTree False left) ++ " <- " ++ (showValue isRoot a h) ++ " -> " ++ (showTree False right)
+    in showTree True tree
+
+{-
 height :: (Ord a, Eq a) => BinaryTree a -> Int
 height tree = treeHeight 0 tree
   where treeHeight h (Node _ Nothing Nothing) = h
@@ -31,19 +52,30 @@ height tree = treeHeight 0 tree
                             in if leftHeight > rightHeight 
                               then leftHeight
                               else rightHeight
+-}
 
 balance :: (Ord a, Eq a) => BinaryTree a -> Int
-balance (Node _ Nothing Nothing) = 0
-balance (Node _ (Just left) Nothing) = 0 - (height left)
-balance (Node _ Nothing (Just right)) = height right
-balance tree = (height . justRight $ tree) - (height . justLeft $ tree)
+balance tree = case (left tree, right tree) of
+  (Nothing, Nothing)    -> 0
+  ((Just l), Nothing)   -> - (height l)
+  (Nothing, (Just r))   -> height r
+  ((Just l), (Just r))  -> (height . justRight $ tree) - (height . justLeft $ tree)
 
 unbalancedInsert :: (Ord a, Eq a) => Maybe (BinaryTree a) -> a -> BinaryTree a
-unbalancedInsert Nothing valueToInsert = Node valueToInsert Nothing Nothing
-unbalancedInsert (Just (Node value left right)) valueToInsert = case compare valueToInsert value of
-  LT -> Node value (Just $ unbalancedInsert left valueToInsert) right
-  EQ -> Node value (Just $ unbalancedInsert left valueToInsert) right
-  GT -> Node value left (Just $ unbalancedInsert right valueToInsert)
+unbalancedInsert Nothing valueToInsert = Node valueToInsert 0 Nothing Nothing
+unbalancedInsert (Just Node{value=v, left=l, right=r}) valueToInsert = if valueToInsert <= v
+  then
+    let newLeft = unbalancedInsert l valueToInsert
+        rightHeight = case r of
+          Nothing       -> -1
+          Just someTree -> height someTree          
+    in Node v ((max (height newLeft) rightHeight) + 1) (Just newLeft) r 
+  else
+    let newRight = unbalancedInsert r valueToInsert
+        leftHeight = case l of
+          Nothing       -> -1
+          Just someTree -> height someTree          
+    in Node v ((max leftHeight (height newRight)) + 1) l (Just newRight)
 
 chainUnbalancedInsert :: (Ord a, Eq a) => Maybe (BinaryTree a) -> a -> Maybe (BinaryTree a)
 chainUnbalancedInsert tree a = Just $ unbalancedInsert tree a
@@ -52,6 +84,7 @@ unbalancedInsertMany :: (Ord a, Eq a) => Maybe (BinaryTree a) -> [a] -> Maybe (B
 unbalancedInsertMany tree [] = tree
 unbalancedInsertMany tree (x:xs) = unbalancedInsertMany (chainUnbalancedInsert tree x) xs
 
+{-
 unbalancedDelete :: (Ord a, Eq a) => Maybe (BinaryTree a) -> a -> Maybe (BinaryTree a)
 unbalancedDelete Nothing _ = Nothing
 unbalancedDelete (Just (Node value left right)) valueToDelete = case compare valueToDelete value of
@@ -79,26 +112,7 @@ deleteRoot root
   | hasRight root = let (newRight, newRootValue) = popLeftmost . justRight $ root in
     Just $ Node newRootValue (left root) newRight
 
-wrapIn :: String -> String -> String -> String
-wrapIn leftDelimiter rightDelimiter x = leftDelimiter ++ x ++ rightDelimiter
-
-wrapInParens = wrapIn "( " " )"
-wrapInBrackts = wrapIn "[ " " ]"
-wrapInAngleBrackets = wrapIn "< " " >"
-
-instance (Show a) => Show (BinaryTree a) where
-  show tree =
-    let
-      showValue isRoot a = case isRoot of
-        True -> wrapInAngleBrackets $ show a
-        False -> show a
-      showTree isRoot (Node a Nothing Nothing) = wrapInBrackts $ showValue isRoot a 
-      showTree isRoot (Node a (Just left) Nothing) = wrapInParens $ (showTree False left) ++ " <- " ++ (showValue isRoot a)
-      showTree isRoot (Node a Nothing (Just right)) = wrapInParens $ (showValue isRoot a) ++ " -> " ++ (showTree False right)
-      showTree isRoot (Node a (Just left) (Just right)) = wrapInParens $ (showTree False left) ++ " <- " ++ (showValue isRoot a) ++ " -> " ++ (showTree False right)
-    in showTree True tree
-
-
+{-
 leftRotate :: (Ord a, Eq a) => BinaryTree a -> BinaryTree a
 leftRotate (Node value left Nothing) = Node value left Nothing
 leftRotate (Node rootValue leftTree (Just rightTree)) = Node (value rightTree) (Just leftOfRoot) (right rightTree)
@@ -179,3 +193,4 @@ main = do
   print a2d
   print a1d
   print a0d
+-}
