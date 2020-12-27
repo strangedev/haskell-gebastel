@@ -84,12 +84,19 @@ wrapIn leftDelimiter rightDelimiter x = leftDelimiter ++ x ++ rightDelimiter
 
 wrapInParens = wrapIn "( " " )"
 wrapInBrackts = wrapIn "[ " " ]"
+wrapInAngleBrackets = wrapIn "< " " >"
 
 instance (Show a) => Show (BinaryTree a) where
-  show (Node a Nothing Nothing) = wrapInBrackts $ show a
-  show (Node a (Just left) Nothing) = wrapInParens $ show left ++ " <- " ++ show a
-  show (Node a Nothing (Just right)) = wrapInParens $ show a ++ " -> " ++ show right
-  show (Node a (Just left) (Just right)) = wrapInParens $ show left ++ " <- " ++ show a ++ " -> " ++ show right
+  show tree =
+    let
+      showValue isRoot a = case isRoot of
+        True -> wrapInAngleBrackets $ show a
+        False -> show a
+      showTree isRoot (Node a Nothing Nothing) = wrapInBrackts $ showValue isRoot a 
+      showTree isRoot (Node a (Just left) Nothing) = wrapInParens $ (showTree False left) ++ " <- " ++ (showValue isRoot a)
+      showTree isRoot (Node a Nothing (Just right)) = wrapInParens $ (showValue isRoot a) ++ " -> " ++ (showTree False right)
+      showTree isRoot (Node a (Just left) (Just right)) = wrapInParens $ (showTree False left) ++ " <- " ++ (showValue isRoot a) ++ " -> " ++ (showTree False right)
+    in showTree True tree
 
 
 leftRotate :: (Ord a, Eq a) => BinaryTree a -> BinaryTree a
@@ -126,10 +133,49 @@ avlRebalance tree = case classifyBalancedness tree of
       LeftHeavy -> rightRotate tree
       RightHeavy -> rightRotate (Node (value tree) (Just $ leftRotate leftTree) (right tree))
 
--- below functions are incomplete, as we have to repair all nodes
--- in the insertion or deletion path
 avlInsert :: (Ord a, Eq a) => Maybe (BinaryTree a) -> a -> BinaryTree a
-avlInsert tree a = avlRebalance $ unbalancedInsert tree a
+avlInsert Nothing valueToInsert = unbalancedInsert Nothing valueToInsert 
+avlInsert (Just (Node value left right)) valueToInsert = case compare valueToInsert value of
+  LT -> avlRebalance $ Node value (Just $ avlInsert left valueToInsert) right
+  EQ -> avlRebalance $ Node value (Just $ avlInsert left valueToInsert) right
+  GT -> avlRebalance $ Node value left (Just $ avlInsert right valueToInsert)
 
-avlDelete :: (Ord a, Eq a) => BinaryTree a -> a -> Maybe (BinaryTree a)
-avlDelete tree a = fmap avlRebalance $ unbalancedDelete (Just tree) a
+avlDelete :: (Ord a, Eq a) => Maybe (BinaryTree a) -> a -> Maybe (BinaryTree a)
+avlDelete Nothing _ = Nothing
+avlDelete (Just (Node value left right)) valueToDelete = case compare valueToDelete value of
+  LT -> Just $ avlRebalance $ Node value (avlDelete left valueToDelete) right
+  EQ -> fmap avlRebalance $ deleteRoot (Node value left right)
+  GT -> Just $ avlRebalance $ Node value left (avlDelete right valueToDelete)
+
+a0 = avlInsert Nothing 10
+a1 = avlInsert (Just a0) 9
+a2 = avlInsert (Just a1) 8
+a3 = avlInsert (Just a2) 7
+a4 = avlInsert (Just a3) 6
+a5 = avlInsert (Just a4) 5
+a6 = avlInsert (Just a5) 4
+a7 = avlInsert (Just a6) 3
+a6d = avlDelete (Just a7) 9
+a5d = avlDelete (a6d) 8
+a4d = avlDelete (a5d) 7
+a3d = avlDelete (a4d) 6
+a2d = avlDelete (a3d) 5
+a1d = avlDelete (a2d) 4
+a0d = avlDelete (a1d) 3
+
+main = do
+  print a0
+  print a1
+  print a2
+  print a3
+  print a4
+  print a5
+  print a6
+  print a7
+  print a6d
+  print a5d
+  print a4d
+  print a3d
+  print a2d
+  print a1d
+  print a0d
